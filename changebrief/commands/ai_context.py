@@ -7,6 +7,11 @@ from typing import List, Optional
 
 import typer
 
+from changebrief.core.ai_context.builder import (
+    build_framework_entry,
+    preview_merge,
+    upsert_framework_entry,
+)
 from changebrief.core.ai_context.composer import compose_context
 from changebrief.core.ai_context.config_loader import load_context_config
 from changebrief.core.ai_context.enricher import enrich
@@ -20,7 +25,9 @@ from changebrief.core.ai_context.generator import (
 from changebrief.core.ai_context.scanner import scan_repo
 from changebrief.core.context import require_app_context
 from changebrief.core.error_handler import handle_errors
+from changebrief.core.exceptions import ValidationError
 from changebrief.core.exit_codes import ExitCodes
+from changebrief.utils.paths import get_config_dir
 
 
 ai_context_app = typer.Typer(
@@ -28,8 +35,9 @@ ai_context_app = typer.Typer(
     epilog=(
         "Examples:\n"
         "  changebrief ai-context init\n"
-        "  changebrief ai-context init --dry-run\n"
-        "  changebrief ai-context init --targets claude --targets cursor"
+        "  changebrief ai-context init --path /path/to/repo --dry-run\n"
+        "  changebrief ai-context init --targets claude --targets cursor\n"
+        "  changebrief ai-context build --path /path/to/custom-framework"
     ),
 )
 
@@ -231,6 +239,192 @@ def init_cmd(
     typer.echo(
         typer.style(
             "Tip: re-run safely. Anything outside the changebrief markers is preserved.",
+            fg=typer.colors.CYAN,
+        )
+    )
+
+
+@ai_context_app.command("build")
+@handle_errors
+def build_cmd(
+    ctx: typer.Context,
+    path: Path = typer.Option(
+        Path("."),
+        "--path",
+        "-p",
+        help="Path to the repo / custom-framework / utility to learn about.",
+        file_okay=False,
+        dir_okay=True,
+    ),
+    name: Optional[str] = typer.Option(
+        None,
+        "--name",
+        "-n",
+        help=(
+            "Override the detected import name (e.g. `torpedo`). Defaults to the "
+            "first top-level Python package or the project name."
+        ),
+    ),
+    description: Optional[str] = typer.Option(
+        None,
+        "--description",
+        "-d",
+        help=(
+            "Override the framework description stored in context.yaml. "
+            "Wins over both the LLM and the deterministic fallback."
+        ),
+    ),
+    note: List[str] = typer.Option(
+        [],
+        "--note",
+        help=(
+            "Add an extra usage note (repeatable). Appended to whatever the "
+            "extractor and LLM produced under `notes:`."
+        ),
+    ),
+    config: Optional[Path] = typer.Option(
+        None,
+        "--config",
+        "-c",
+        help=(
+            "Path to the context config to update "
+            "(defaults to ~/.changebrief/context.yaml)."
+        ),
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Replace an existing entry for this framework.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Print the YAML that would be written and exit without touching disk.",
+    ),
+    enrich: bool = typer.Option(
+        True,
+        "--enrich/--no-enrich",
+        help=(
+            "Use the configured LLM to synthesise rich `do` / `dont` / `notes` "
+            "with verified citations. On by default; ``--no-enrich`` produces a "
+            "deterministic-only entry from public-API and exception signals."
+        ),
+    ),
+) -> None:
+    """
+    Scan a repo / custom framework / utility and write a rich entry to context.yaml.
+
+    The pipeline runs an AST-driven deterministic extractor (public API,
+    exception family, notable directories, examples, docs, config keys,
+    Python version pin) and — when an LLM is available — an optional
+    synthesis pass that produces idiomatic ``do`` / ``dont`` / ``notes``
+    bullets with file citations verified against the framework's source.
+    The resulting entry is consumed by ``changebrief ai-context init`` in
+    every repo that imports this framework.
+    """
+    app_ctx = require_app_context(ctx)
+    target_path = path.resolve()
+    if not target_path.is_dir():
+        raise ValidationError(f"--path must be an existing directory: {target_path}")
+
+    repo_ctx = scan_repo(target_path)
+    try:
+        report = build_framework_entry(
+            repo_ctx,
+            name_override=name,
+            description_override=description,
+            user_notes=note,
+            config=app_ctx.config,
+            llm_enabled=enrich,
+        )
+    except ValueError as exc:
+        raise ValidationError(str(exc)) from exc
+
+    entry = report.entry
+    extraction = report.extraction
+    synthesis = report.synthesis
+
+    config_path = (
+        Path(config).expanduser().resolve()
+        if config is not None
+        else get_config_dir() / "context.yaml"
+    )
+
+    typer.echo(typer.style(f"Scanned {target_path}", bold=True))
+    typer.echo(f"  framework:        {entry.name}")
+    if extraction.package_dir:
+        typer.echo(f"  package source:   {extraction.package_dir}/")
+    if extraction.public_api:
+        typer.echo(
+            f"  public API:       {len(extraction.public_api)} symbol(s) "
+            f"({', '.join(s.name for s in extraction.public_api[:6])}"
+            + ("…" if len(extraction.public_api) > 6 else "")
+            + ")"
+        )
+    if extraction.exceptions:
+        typer.echo(f"  exceptions:       {len(extraction.exceptions)} class(es)")
+    if extraction.notable_dirs:
+        typer.echo(
+            f"  notable dirs:     "
+            + ", ".join(nd.name for nd in extraction.notable_dirs[:6])
+        )
+    if extraction.python_version_pin:
+        typer.echo(f"  python pin:       {extraction.python_version_pin}")
+    if synthesis.used_llm:
+        typer.echo(
+            typer.style(
+                f"  enriched via LLM"
+                + (" (cache hit)" if synthesis.cache_hit else "")
+                + f" [{synthesis.model_used}]: "
+                + f"{len(entry.do)} do, {len(entry.dont)} dont, "
+                + f"{len(synthesis.notes)} llm-notes, "
+                + f"{len(entry.related_frameworks)} related"
+                + (
+                    f" ({synthesis.items_dropped} dropped — bad citations)"
+                    if synthesis.items_dropped
+                    else ""
+                ),
+                fg=typer.colors.CYAN,
+            )
+        )
+    elif enrich:
+        typer.echo(
+            typer.style(
+                f"  enrichment skipped: {synthesis.reason_skipped}",
+                fg=typer.colors.YELLOW,
+            )
+        )
+    typer.echo(f"  target file:      {config_path}")
+    typer.echo("")
+
+    if dry_run:
+        typer.echo(typer.style("--- proposed context.yaml (dry-run) ---", bold=True))
+        typer.echo(preview_merge(entry, config_path))
+        return
+
+    conflict, written_path = upsert_framework_entry(entry, config_path, force=force)
+    if conflict:
+        typer.echo(
+            typer.style(
+                f"⚠ Refusing to overwrite existing entry for `{entry.name}` in "
+                f"{written_path}. Pass --force to replace.",
+                fg=typer.colors.YELLOW,
+            ),
+            err=True,
+        )
+        raise typer.Exit(ExitCodes.VALIDATION_ERROR)
+
+    typer.echo(
+        typer.style(
+            f"✓ added `{entry.name}` to {written_path}",
+            fg=typer.colors.GREEN,
+        )
+    )
+    typer.echo(
+        typer.style(
+            "Tip: re-run `changebrief ai-context init` in any repo that imports "
+            f"`{entry.name}` to surface the new description.",
             fg=typer.colors.CYAN,
         )
     )

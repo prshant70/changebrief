@@ -135,7 +135,11 @@ changebrief validate --base <ref> --feature <ref>
                   [--dry-run]
 
 # AI context (generate per-agent guidance files)
-changebrief ai-context init   [--targets claude|cursor|codex] [--enrich] [--dry-run]
+changebrief ai-context init    [--path /path/to/repo] [--targets claude|cursor|codex]
+                               [--enrich] [--dry-run]
+changebrief ai-context build   --path /path/to/custom-framework
+                               [--name <pkg>] [--description "..."] [--note "..."]
+                               [--enrich/--no-enrich] [--force] [--dry-run]
 
 # Setup / config
 changebrief init
@@ -201,6 +205,9 @@ files from the repo itself — no hand-written boilerplate, no LLM-only fluff.
 # Generate CLAUDE.md, CURSOR.md, CODEX.md in the current repo
 changebrief ai-context init
 
+# Or point at a repo outside your current directory
+changebrief ai-context init --path /path/to/repo
+
 # Pick a subset; preview without writing
 changebrief ai-context init --targets cursor --dry-run
 
@@ -216,6 +223,54 @@ wrapped in `<!-- changebrief:ai-context:start v1 -->` /
 `<!-- changebrief:ai-context:end v1 -->` markers so you can re-run safely;
 anything outside the markers is preserved.
 
+### Teaching ChangeBrief about a custom framework
+
+Run `ai-context build` once against the framework's own repo. The command
+extracts a *rich*, citation-bearing entry for the home-level
+`~/.changebrief/context.yaml` so future `init` runs in any consumer repo
+get framework-specific guidance instead of generic boilerplate.
+
+```bash
+# Scan the framework's repo and add it to ~/.changebrief/context.yaml
+changebrief ai-context build --path /path/to/torpedo
+
+# Skip the LLM pass (faster; deterministic baseline only)
+changebrief ai-context build --path /path/to/torpedo --no-enrich
+
+# Override the auto-detected name / description and append usage notes
+changebrief ai-context build --path /path/to/torpedo \
+  --name torpedo \
+  --description "Torpedo — async microservice chassis built on Sanic." \
+  --note "Open a 1mg-Service-Templates PR before bumping the Torpedo pin."
+
+# Preview the YAML diff without writing
+changebrief ai-context build --path /path/to/torpedo --dry-run
+```
+
+The pipeline runs in two phases:
+
+1. **Deterministic extraction** (always on) — AST-walks the framework
+   source for the public API surface (from `__init__.py` `__all__`),
+   the exception family, decorator candidates, notable subdirectories
+   (`api_clients/`, `circuit_breaker/`, `middlewares/`, …), `config.json`
+   keys, the `requires-python` pin, and the smallest example under
+   `examples/`. Each fact lands in `notes:` with a real file path attached.
+2. **LLM synthesis** (default; `--no-enrich` to skip) — feeds the
+   verified facts plus the README, docs, and example files to the
+   configured LLM through the same redaction + JSON-schema pipeline the
+   rest of `changebrief` uses. The model returns a polished framework
+   description, related-frameworks entries (e.g. Sanic for Torpedo,
+   aiohttp for the API-client base), and idiomatic `do:` / `dont:` /
+   `notes:` bullets. **Every bullet must cite a path inside the framework
+   repo**; bullets whose citations don't resolve on disk are dropped
+   before write.
+
+Outputs are cached in `~/.changebrief/cache/ai-context-build/` keyed on the
+framework root, model, prompt version, and a digest of the cited files —
+unchanged repos are free to re-run. The command refuses to overwrite an
+existing framework entry unless `--force` is passed, and unrelated keys
+(`do:` / `dont:` / `notes:` you've curated by hand) are preserved.
+
 `--enrich` calls the configured LLM to add a polished overview and a few
 *Inferred conventions / Gotchas* bullets. It's strictly bounded:
 
@@ -228,7 +283,10 @@ anything outside the markers is preserved.
 
 ### Customising what gets written
 
-Two layers of overrides, both optional, both YAML:
+Two layers of overrides, both optional, both YAML. Both layers apply when
+present — the per-repo file extends (rather than fully shadows) the per-user
+file. Repo-level entries win on conflicting keys; lists are concatenated and
+de-duplicated.
 
 | Path                                     | Scope     | Use for                                                   |
 | ---------------------------------------- | --------- | --------------------------------------------------------- |
