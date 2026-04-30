@@ -66,9 +66,6 @@ def enrich_config_from_dependencies(
     skipped: List[str] = []
 
     frameworks: Dict[str, str] = {}
-    do: List[str] = []
-    dont: List[str] = []
-    notes: List[str] = []
 
     # If a dep is specified multiple times (pyproject + requirements + Pipfile, etc),
     # pick one deterministically per package name to avoid duplicate/conflicting
@@ -108,29 +105,23 @@ def enrich_config_from_dependencies(
         learned.append(dep)
         entry = _sanitize_entry_for_merge(entry)
 
-        # Merge: never override an existing key for the same dep name; ordering is stable.
+        # Merge dependency context conservatively:
+        #
+        # - Keep only short framework descriptions so the consumer repo can label
+        #   its heavily-imported packages in "Stack & dependencies".
+        # - Do NOT merge dependency do/dont/notes into the consumer repo's own
+        #   guidance. Those bullets are usually API-manual material for the
+        #   dependency and can mislead agents when presented as project policy.
+        #
+        # (Repo authors who want dependency API rules can add them explicitly via
+        # `.changebrief/context.yaml`.)
         if dep.package_name not in frameworks:
             frameworks[dep.package_name] = _ensure_named_framework_desc(dep.package_name, entry.description)
         for k, v in (entry.related_frameworks or {}).items():
             if k not in frameworks:
                 frameworks[k] = _ensure_named_framework_desc(k, v)
 
-        dep_do, dep_dont = _drop_contradictions(list(entry.do), list(entry.dont))
-
-        # Enforce evidence gating and per-dependency caps. Keep only bullets that
-        # include explicit evidence markers (LLM bullets now carry these; baseline
-        # notes already include sources).
-        for line in _cap(_evidence_only(dep_do), 3):
-            if line and line not in do:
-                do.append(line)
-        for line in _cap(_evidence_only(dep_dont), 3):
-            if line and line not in dont:
-                dont.append(line)
-        for line in _cap(_evidence_only(entry.notes), 4):
-            if line and line not in notes:
-                notes.append(line)
-
-    return ContextConfig(frameworks=frameworks, do=do, dont=dont, notes=notes), learned, skipped
+    return ContextConfig(frameworks=frameworks, do=[], dont=[], notes=[]), learned, skipped
 
 
 def discover_git_dependencies(repo_root: Path) -> List[GitDependency]:

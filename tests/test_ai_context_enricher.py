@@ -87,8 +87,8 @@ def test_enrich_drops_hallucinated_paths(monkeypatch: pytest.MonkeyPatch, small_
     assert "FastAPI" in enriched.overview
     # New sections added.
     titles = [s.title for s in enriched.sections]
-    assert "Inferred conventions (LLM)" in titles
-    assert "Gotchas (LLM)" in titles
+    assert "Suggestions (LLM; verify in cited file)" in titles
+    assert "Gotchas (LLM; verify in cited file)" in titles
 
     flat = "\n".join(b for s in enriched.sections for b in s.bullets)
     # Real-path bullets survived.

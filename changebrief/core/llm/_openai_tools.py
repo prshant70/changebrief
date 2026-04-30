@@ -17,6 +17,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from changebrief.core.exceptions import ConfigError
 from changebrief.core.redaction import redact
+from changebrief.core.llm.calllog import LLMCallUsage, log_llm_call_usage
 
 
 @dataclass
@@ -96,6 +97,45 @@ def run_with_tools(
         {"role": "user", "content": _redact_str(user, enabled=redact_io)},
     ]
 
+    def _log_usage(resp: Any, *, model: str, purpose: str, temperature: float) -> None:
+        usage = getattr(resp, "usage", None)
+        if usage is None:
+            return
+        # OpenAI python SDK returns prompt_tokens/completion_tokens/total_tokens for chat.completions.
+        # Some models/APIs may return input_tokens/output_tokens; support both.
+        input_tokens = getattr(usage, "prompt_tokens", None)
+        output_tokens = getattr(usage, "completion_tokens", None)
+        total_tokens = getattr(usage, "total_tokens", None)
+        if input_tokens is None:
+            input_tokens = getattr(usage, "input_tokens", None)
+        if output_tokens is None:
+            output_tokens = getattr(usage, "output_tokens", None)
+
+        def _to_int(x: Any) -> Optional[int]:
+            try:
+                return int(x) if x is not None else None
+            except Exception:
+                return None
+
+        record = LLMCallUsage(
+            provider="openai",
+            model=str(model),
+            purpose=str(purpose),
+            input_tokens=_to_int(input_tokens),
+            output_tokens=_to_int(output_tokens),
+            total_tokens=_to_int(total_tokens),
+            temperature=float(temperature),
+        )
+        log_llm_call_usage(record)
+        if record.input_tokens is not None or record.output_tokens is not None:
+            log.info(
+                "LLM usage: in=%s out=%s total=%s (%s)",
+                record.input_tokens,
+                record.output_tokens,
+                record.total_tokens,
+                record.purpose,
+            )
+
     def _create(*, tool_choice: Optional[str]) -> Any:
         kwargs: Dict[str, Any] = {
             "model": model_name,
@@ -109,7 +149,10 @@ def run_with_tools(
                 kwargs["tool_choice"] = tool_choice
         if response_format is not None:
             kwargs["response_format"] = response_format
-        return client.chat.completions.create(**kwargs)
+        resp = client.chat.completions.create(**kwargs)
+        # Best-effort usage logging (counts only; no content).
+        _log_usage(resp, model=model_name, purpose=purpose or "(unspecified)", temperature=temperature)
+        return resp
 
     for _ in range(max_tool_rounds):
         resp = _create(tool_choice="auto" if openai_tools else None)

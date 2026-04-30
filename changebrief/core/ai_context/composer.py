@@ -34,6 +34,9 @@ _MAX_DO_BULLETS = 10
 _MAX_DONT_BULLETS = 8
 _MAX_NOTES_BULLETS = 12
 
+# Keep dependency descriptions concise in the generated markdown.
+_MAX_FRAMEWORK_DESC_CHARS = 140
+
 
 def compose_context(repo_ctx: RepoContext, config: ContextConfig) -> AIContext:
     """Compose the agent-ready context from raw signals + config."""
@@ -96,6 +99,7 @@ def _stack_section(repo_ctx: RepoContext, config: ContextConfig) -> AIContextSec
     bullets: List[str] = []
 
     overrides = {k.lower(): v for k, v in (config.frameworks or {}).items()}
+    dep_manifest = _dep_manifest_hint(repo_ctx.root)
 
     for profile in _real_profiles(repo_ctx):
         bits: List[str] = []
@@ -121,11 +125,11 @@ def _stack_section(repo_ctx: RepoContext, config: ContextConfig) -> AIContextSec
             applied_overrides.add(pkg_lower)
             already_named.add(pkg_lower)
             evidence = (
-                f"imported in {file_count} source files; declared in pyproject"
+                f"imported in {file_count} source files; declared in {dep_manifest}"
                 if file_count
                 else "user config + curated detection"
             )
-            friendly2 = _ensure_named_override(pkg_lower, friendly)
+            friendly2 = _cap_one_line(_ensure_named_override(pkg_lower, friendly))
             bullets.append(f"{friendly2} _(evidence: {evidence})_")
 
         # 2. Curated frameworks — skip any that the override already covered.
@@ -280,7 +284,8 @@ def _architecture_section(repo_ctx: RepoContext) -> AIContextSection:
 
 
 def _local_dev_section(repo_ctx: RepoContext) -> AIContextSection:
-    s = AIContextSection(title="Local development")
+    # Do not omit this section; even minimal guidance is useful.
+    s = AIContextSection(title="Local development", omit_if_empty=False)
     bullets: List[str] = []
     seen: set[str] = set()
     for profile in repo_ctx.profiles:
@@ -304,6 +309,14 @@ def _local_dev_section(repo_ctx: RepoContext) -> AIContextSection:
             bullets.append("`tests` → `go test ./...`")
         elif primary.test_framework == "cargo test" and "test" not in seen:
             bullets.append("`tests` → `cargo test`")
+        # If no test framework was detected but this looks like a Python repo with tests,
+        # still provide the canonical default.
+        elif primary.language == "python" and "tests" not in seen:
+            has_tests_dir = any(d in {"tests", "test", "testing"} for d in (primary.test_dirs or []))
+            if has_tests_dir:
+                bullets.append("`tests` → `pytest -q`")
+    if not bullets:
+        bullets.append("_No run scripts detected in this repo._")
     s.bullets = bullets
     return s
 
@@ -446,3 +459,25 @@ def _path_or_none(root: str, relative: str) -> Optional[str]:
     from pathlib import Path
 
     return relative if (Path(root) / relative).exists() else None
+
+
+def _cap_one_line(text: str) -> str:
+    """Cap dependency/framework descriptions to a single short line."""
+    s = " ".join(str(text or "").split())
+    if not s:
+        return s
+    if len(s) <= _MAX_FRAMEWORK_DESC_CHARS:
+        return s
+    # Prefer a clean truncation over mid-token clipping.
+    return s[: _MAX_FRAMEWORK_DESC_CHARS - 1].rstrip() + "…"
+
+
+def _dep_manifest_hint(repo_root: str) -> str:
+    """Best-effort label of where dependencies are declared."""
+    from pathlib import Path
+
+    root = Path(repo_root)
+    for cand in ("pyproject.toml", "requirements.txt", "Pipfile", "setup.cfg", "setup.py", "package.json"):
+        if (root / cand).exists():
+            return f"`{cand}`"
+    return "dependency manifests"

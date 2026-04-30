@@ -274,14 +274,22 @@ def _merge(
     # Insert "Inferred conventions" right after "Conventions (observed)" if present.
     if conv_kept:
         section = AIContextSection(
-            title="Inferred conventions (LLM)",
+            title="Suggestions (LLM; verify in cited file)",
+            paragraphs=[
+                "These are hypotheses extracted from a small file sample. "
+                "Before acting on them, confirm the behavior in the cited file."
+            ],
             bullets=[f"{obs} _(evidence: `{path}`)_" for obs, path in conv_kept],
         )
         sections = _insert_after(sections, after_title="Conventions (observed)", new_section=section)
 
     if goth_kept:
         section = AIContextSection(
-            title="Gotchas (LLM)",
+            title="Gotchas (LLM; verify in cited file)",
+            paragraphs=[
+                "These are hypotheses extracted from a small file sample. "
+                "Before relying on them, confirm the behavior in the cited file."
+            ],
             bullets=[f"{txt} _(evidence: `{path}`)_" for txt, path in goth_kept],
         )
         sections = _insert_before(sections, before_title="References", new_section=section)

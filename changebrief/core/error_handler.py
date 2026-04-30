@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import traceback
 from functools import wraps
 from typing import Any, Callable, TypeVar
 
@@ -42,9 +44,13 @@ def handle_errors(fn: F) -> F:
         except ChangeBriefError as exc:
             typer.secho(str(exc), fg=typer.colors.RED, err=True)
             raise typer.Exit(ExitCodes.UNKNOWN_ERROR)
-        except Exception:
+        except Exception as exc:
+            root = logging.getLogger()
+            is_debug = root.isEnabledFor(logging.DEBUG)
+            if is_debug:
+                typer.secho(traceback.format_exc(), fg=typer.colors.RED, err=True)
             typer.secho(
-                "An unexpected error occurred. Use --verbose for details.",
+                "An unexpected error occurred." + (" See traceback above." if is_debug else " Use --verbose for details."),
                 fg=typer.colors.RED,
                 err=True,
             )

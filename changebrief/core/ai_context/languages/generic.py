@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Dict
 
@@ -42,4 +43,58 @@ class GenericAdapter(LanguageAdapter):
                     target = stripped.split(":", 1)[0].strip()
                     if target and target.replace("-", "").replace("_", "").isalnum():
                         profile.run_scripts[target] = f"just {target}"
+
+        # README command fences: best-effort extraction of install/run/test commands.
+        for name in ("README.md", "README.rst", "README.txt", "README"):
+            rp = root / name
+            if not rp.exists():
+                continue
+            try:
+                text = self._read(rp)
+            except Exception:
+                text = ""
+            if not text:
+                break
+            for key, cmd in _readme_scripts(text):
+                profile.run_scripts.setdefault(key, cmd)
+            break
         return profile
+
+
+_FENCE_RE = re.compile(r"```(?:bash|sh|shell|zsh|console|text)?\s*\n([\s\S]*?)\n```", re.IGNORECASE)
+
+
+def _readme_scripts(text: str) -> list[tuple[str, str]]:
+    """Extract a small set of canonical scripts from README fenced blocks."""
+    scripts: list[tuple[str, str]] = []
+
+    def add(name: str, cmd: str) -> None:
+        if not cmd.strip():
+            return
+        # Deduplicate by command string.
+        if any(c == cmd for _, c in scripts):
+            return
+        scripts.append((name, cmd.strip()))
+
+    for m in _FENCE_RE.finditer(text or ""):
+        block = m.group(1) or ""
+        for raw in block.splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            # Skip obvious non-commands.
+            if line.startswith(("git clone", "cd ")):
+                continue
+            if re.match(r"^(pip|pip3)\s+install\s+-r\s+.+", line):
+                add("install", line)
+            elif re.match(r"^(python|python3)\s+-m\s+[\w.]+", line):
+                add("run", line)
+            elif re.match(r"^pytest(\s|$)", line):
+                add("tests", line)
+            elif re.match(r"^make\s+\w[\w\-]*", line):
+                add("make", line)
+
+        if len(scripts) >= 6:
+            break
+
+    return scripts

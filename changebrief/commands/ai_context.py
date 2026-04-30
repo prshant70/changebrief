@@ -127,9 +127,9 @@ def init_cmd(
         False,
         "--enrich",
         help=(
-            "Augment the deterministic output with an LLM pass that adds an inferred "
-            "conventions and gotchas section. Each LLM-suggested item is verified to "
-            "cite a real file in the repo; unverifiable items are dropped. Off by default."
+            "Augment the deterministic output with an LLM pass that adds verify-first "
+            "suggestions and gotchas. Each LLM-suggested item is verified to cite a real "
+            "file in the repo; unverifiable items are dropped. Off by default."
         ),
     ),
     enrich_deps: bool = typer.Option(
