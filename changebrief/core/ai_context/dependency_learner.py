@@ -41,6 +41,7 @@ class GitDependency:
 
 
 _SHA_RE = re.compile(r"^[0-9a-f]{7,40}$", re.IGNORECASE)
+_DEP_CACHE_VERSION = "deps-2"
 
 
 def enrich_config_from_dependencies(
@@ -512,7 +513,7 @@ def _parse_node_git_spec(spec: str) -> tuple[Optional[str], Optional[str]]:
 
 
 def _load_or_build_entry(dep: GitDependency, *, config: dict, llm_enabled: bool) -> FrameworkEntry:
-    key = _cache_key(dep.repo_url, dep.ref)
+    key = _cache_key(dep.repo_url, dep.ref, llm_enabled=llm_enabled)
     cache_dir = get_config_dir() / "cache" / "ai-context-deps" / key
     ctx_path = cache_dir / "context.yaml"
     if ctx_path.is_file():
@@ -686,8 +687,10 @@ def _run(cmd: List[str]) -> None:
         raise RuntimeError(f"Command {cmd!r} failed: {details}")
 
 
-def _cache_key(repo_url: str, ref: str) -> str:
+def _cache_key(repo_url: str, ref: str, *, llm_enabled: bool) -> str:
     h = hashlib.sha256()
+    h.update(f"v={_DEP_CACHE_VERSION}\n".encode("utf-8", errors="replace"))
+    h.update(f"llm={'1' if llm_enabled else '0'}\n".encode("utf-8", errors="replace"))
     h.update(repo_url.strip().encode("utf-8", errors="replace"))
     h.update(b"\n")
     h.update(ref.strip().encode("utf-8", errors="replace"))

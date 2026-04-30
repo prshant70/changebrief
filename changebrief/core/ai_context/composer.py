@@ -125,7 +125,8 @@ def _stack_section(repo_ctx: RepoContext, config: ContextConfig) -> AIContextSec
                 if file_count
                 else "user config + curated detection"
             )
-            bullets.append(f"{friendly} _(evidence: {evidence})_")
+            friendly2 = _ensure_named_override(pkg_lower, friendly)
+            bullets.append(f"{friendly2} _(evidence: {evidence})_")
 
         # 2. Curated frameworks — skip any that the override already covered.
         for fw in profile.frameworks[:8]:
@@ -155,6 +156,21 @@ def _stack_section(repo_ctx: RepoContext, config: ContextConfig) -> AIContextSec
         bullets.append("CI: " + ", ".join(repo_ctx.has_ci))
     s.bullets = bullets
     return s
+
+
+def _ensure_named_override(pkg: str, friendly: str) -> str:
+    """Ensure an override description is self-identifying.
+
+    Prevents bullets like "A web framework for..." with no package name.
+    """
+    p = (pkg or "").strip().lower()
+    f = (friendly or "").strip()
+    if not p or not f:
+        return f
+    low = f.lower()
+    if low.startswith(p) or f"`{p}`" in f:
+        return f
+    return f"`{p}` — {f}"
 
 
 def _unknown_major_imports(

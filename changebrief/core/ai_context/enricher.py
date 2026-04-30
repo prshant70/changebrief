@@ -44,6 +44,14 @@ SAMPLE_FILE_TAIL_BYTES = 500
 MAX_SAMPLED_FILES = 5
 MAX_CONVENTIONS = 6
 MAX_GOTCHAS = 4
+MAX_DO = 5
+MAX_DONT = 4
+MAX_NOTES = 5
+
+# Final section caps (must stay aligned with composer output expectations).
+_FINAL_DO_CAP = 10
+_FINAL_DONT_CAP = 8
+_FINAL_NOTES_CAP = 12
 
 
 SYSTEM_PROMPT = """\
@@ -64,13 +72,17 @@ CRITICAL RULES (must follow):
    provided files.
 3. Avoid restating obvious facts the deterministic scanner already covered
    (language, framework names, package manager). Add NEW signal.
-4. Prefer specific, behavioral observations:
+4. Prefer specific, behavioral observations and service invariants:
      "errors are wrapped in ChangeBriefError subclasses (see core/exceptions.py)"
    over generic platitudes:
      "write clean, maintainable code".
-5. If a section yields nothing high-quality, return an empty list. Padding
+5. Focus on what prevents real mistakes:
+   - event/payload contracts, idempotency, retries/DLQ, logging requirements,
+     auth middleware expectations, persistence conventions.
+   - "golden path" pointers: where to add a new handler / route / manager.
+6. If a section yields nothing high-quality, return an empty list. Padding
    with weak items is worse than empty.
-6. Output JSON only, conforming to the supplied schema. No prose, no markdown.
+7. Output JSON only, conforming to the supplied schema. No prose, no markdown.
 """
 
 
@@ -110,8 +122,54 @@ ENRICHMENT_SCHEMA: Dict[str, Any] = {
                     "required": ["description", "evidence_path"],
                 },
             },
+            "do": {
+                "type": "array",
+                "description": "Small set of repo-specific Do bullets (avoid framework manuals).",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "bullet": {"type": "string"},
+                        "evidence_path": {"type": "string"},
+                    },
+                    "required": ["bullet", "evidence_path"],
+                },
+            },
+            "dont": {
+                "type": "array",
+                "description": "Small set of repo-specific Don't bullets (high-risk footguns only).",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "bullet": {"type": "string"},
+                        "evidence_path": {"type": "string"},
+                    },
+                    "required": ["bullet", "evidence_path"],
+                },
+            },
+            "notes": {
+                "type": "array",
+                "description": "High-signal repo-specific notes (contracts, envelopes, pins) with citations.",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "bullet": {"type": "string"},
+                        "evidence_path": {"type": "string"},
+                    },
+                    "required": ["bullet", "evidence_path"],
+                },
+            },
         },
-        "required": ["polished_overview", "inferred_conventions", "gotchas"],
+        "required": [
+            "polished_overview",
+            "inferred_conventions",
+            "gotchas",
+            "do",
+            "dont",
+            "notes",
+        ],
     },
 }
 
@@ -228,11 +286,57 @@ def _merge(
         )
         sections = _insert_before(sections, before_title="References", new_section=section)
 
+    do_kept, do_dropped = _verified_items(
+        repo_root,
+        payload.get("do") or [],
+        text_field="bullet",
+        cap=MAX_DO,
+    )
+    dont_kept, dont_dropped = _verified_items(
+        repo_root,
+        payload.get("dont") or [],
+        text_field="bullet",
+        cap=MAX_DONT,
+    )
+    notes_kept, notes_dropped = _verified_items(
+        repo_root,
+        payload.get("notes") or [],
+        text_field="bullet",
+        cap=MAX_NOTES,
+    )
+
+    if do_kept:
+        sections = _merge_into_section(
+            sections,
+            title="Do",
+            additions=[f"{txt} _(evidence: `{path}`)_" for txt, path in do_kept],
+            cap=_FINAL_DO_CAP,
+            insert_after=3,  # keep deterministic top bullets first
+        )
+    if dont_kept:
+        sections = _merge_into_section(
+            sections,
+            title="Don't",
+            additions=[f"{txt} _(evidence: `{path}`)_" for txt, path in dont_kept],
+            cap=_FINAL_DONT_CAP,
+            insert_after=2,
+        )
+    if notes_kept:
+        sections = _merge_into_section(
+            sections,
+            title="Notes",
+            additions=[f"{txt} _(evidence: `{path}`)_" for txt, path in notes_kept],
+            cap=_FINAL_NOTES_CAP,
+            insert_after=0,
+        )
+
     enriched = AIContext(
         project_name=ai_ctx.project_name,
         overview=overview,
         sections=sections,
     )
+    # Report only the original convention/gotcha counts (keeps CLI output stable).
+    _ = (do_dropped, dont_dropped, notes_dropped)
     return enriched, (len(conv_kept), len(goth_kept)), (conv_dropped, goth_dropped)
 
 
@@ -304,6 +408,33 @@ def _insert_before(
             out.insert(idx, new_section)
             return out
     out.append(new_section)
+    return out
+
+
+def _merge_into_section(
+    sections: List[AIContextSection],
+    *,
+    title: str,
+    additions: List[str],
+    cap: int,
+    insert_after: int,
+) -> List[AIContextSection]:
+    """Merge bullets into an existing section title, with dedupe + cap."""
+    out = list(sections)
+    for idx, sec in enumerate(out):
+        if sec.title != title:
+            continue
+        existing = list(sec.bullets or [])
+        insert_at = max(0, min(len(existing), int(insert_after)))
+        merged: List[str] = []
+        merged.extend(existing[:insert_at])
+        for item in additions:
+            if item and item not in merged and item not in existing:
+                merged.append(item)
+        merged.extend(existing[insert_at:])
+        sec2 = AIContextSection(title=sec.title, bullets=merged[: max(0, int(cap))], paragraphs=list(sec.paragraphs))
+        out[idx] = sec2
+        return out
     return out
 
 

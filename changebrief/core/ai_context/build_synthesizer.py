@@ -21,6 +21,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -418,6 +419,7 @@ def _verified_bullets(
         if not _cites_resolve(cites, valid_paths, repo_root):
             dropped += 1
             continue
+        bullet = _strip_absolute_paths(bullet)
         # Preserve at least one explicit citation in the rendered bullet so
         # downstream consumers (notably `init --enrich-deps`) can enforce
         # citation gating just like the repo-level enricher does.
@@ -427,6 +429,21 @@ def _verified_bullets(
         if len(kept) >= cap:
             break
     return kept, dropped
+
+
+_ABS_PATH_RE = re.compile(r"(?<![`\\w])/(?:Users|home|opt|var|private|Volumes)/[^\\s)`\\]]{2,200}")
+
+
+def _strip_absolute_paths(text: str) -> str:
+    """Remove absolute local filesystem paths from LLM bullet text.
+
+    These often leak into framework notes (e.g. `/opt/...`) and reduce portability.
+    We keep repo-relative cites separately via `_(evidence: ...)`.
+    """
+    s = (text or "").strip()
+    if not s:
+        return s
+    return _ABS_PATH_RE.sub("`<path>`", s)
 
 
 def _cites_resolve(cites: Any, valid_paths: Set[str], repo_root: Path) -> bool:
