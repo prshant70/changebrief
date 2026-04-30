@@ -1,0 +1,23 @@
+README.md
+  b5f48ebdc34479bb 3-25,27,29,31,33-35,37-39,41-44,46-52,54,97-106,143-149,152-153,156,166-173,194-203,324-354,404-407,411-413,422-425,430,433-438,442-446,452-479
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "0029c196c4fdfcb78344f5a0b9d21cce746b134a",
+  "prompts": {
+    "b5f48ebdc34479bb": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "8907e889-e02e-49f6-ade1-5c84b9c9fccc",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Prashant Mishra",
+      "messages": [],
+      "total_additions": 166,
+      "total_deletions": 90,
+      "accepted_lines": 165,
+      "overriden_lines": 0
+    }
+  }
+}
