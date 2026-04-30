@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "changebrief"
+version = "0.2.0"
+description = "Turn a Git diff into a pre-merge validation report."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "ChangeBrief contributors" }]
+keywords = ["cli", "testing", "git", "llm"]
+dependencies = [
+    "typer>=0.12.0",
+    "PyYAML>=6.0",
+    "openai>=1.40.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+]
+
+[project.scripts]
+changebrief = "changebrief.cli:main"
+
+[project.urls]
+Repository = "https://github.com/prshant70/changebrief"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["changebrief*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
