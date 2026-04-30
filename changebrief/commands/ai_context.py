@@ -14,6 +14,7 @@ from changebrief.core.ai_context.builder import (
 )
 from changebrief.core.ai_context.composer import compose_context
 from changebrief.core.ai_context.config_loader import load_context_config
+from changebrief.core.ai_context.dependency_learner import enrich_config_from_dependencies
 from changebrief.core.ai_context.enricher import enrich
 from changebrief.core.ai_context.generator import (
     AGENT_TARGETS,
@@ -131,6 +132,23 @@ def init_cmd(
             "cite a real file in the repo; unverifiable items are dropped. Off by default."
         ),
     ),
+    enrich_deps: bool = typer.Option(
+        False,
+        "--enrich-deps",
+        help=(
+            "When enabled, discover pinned git dependencies (Python/Node v1), check them "
+            "out into a local cache, build framework context for each dependency, and "
+            "merge that into this run's context so generated files are framework-aware."
+        ),
+    ),
+    dep_hosts: List[str] = typer.Option(
+        ["github.com", "bitbucket.org", "file"],
+        "--dep-hosts",
+        help=(
+            "Allowed dependency hosts for `--enrich-deps` (repeatable). "
+            "Defaults to github.com, bitbucket.org, and file:// (for local deps/tests)."
+        ),
+    ),
 ) -> None:
     """
     Scan the repo, compose an evidence-backed context, and write the per-agent files.
@@ -146,6 +164,47 @@ def init_cmd(
 
     repo_ctx = scan_repo(repo_path)
     cfg = load_context_config(repo_path, explicit_path=config)
+
+    if enrich_deps:
+        dep_cfg, learned, skipped = enrich_config_from_dependencies(
+            repo_path,
+            config=app_ctx.config,
+            allow_hosts=dep_hosts,
+            llm_enabled=enrich_with_llm,
+        )
+        # Merge learned dependency config into the effective config (but do not
+        # override explicit user config keys).
+        if dep_cfg.frameworks:
+            for k, v in dep_cfg.frameworks.items():
+                if k not in cfg.frameworks:
+                    cfg.frameworks[k] = v
+        for item in dep_cfg.do:
+            if item and item not in cfg.do:
+                cfg.do.append(item)
+        for item in dep_cfg.dont:
+            if item and item not in cfg.dont:
+                cfg.dont.append(item)
+        for item in dep_cfg.notes:
+            if item and item not in cfg.notes:
+                cfg.notes.append(item)
+
+        if learned:
+            typer.echo(
+                typer.style(
+                    "  learned dependency frameworks: "
+                    + ", ".join(f"{d.package_name}@{d.ref}" for d in learned[:6])
+                    + ("…" if len(learned) > 6 else ""),
+                    fg=typer.colors.CYAN,
+                )
+            )
+        if skipped and not learned:
+            typer.echo(
+                typer.style(
+                    "  dependency learning skipped: " + "; ".join(skipped[:3]),
+                    fg=typer.colors.YELLOW,
+                ),
+                err=True,
+            )
     ai_ctx = compose_context(repo_ctx, cfg)
 
     typer.echo(typer.style(f"Scanned {repo_path}", bold=True))

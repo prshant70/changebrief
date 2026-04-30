@@ -418,7 +418,12 @@ def _verified_bullets(
         if not _cites_resolve(cites, valid_paths, repo_root):
             dropped += 1
             continue
-        kept.append(bullet)
+        # Preserve at least one explicit citation in the rendered bullet so
+        # downstream consumers (notably `init --enrich-deps`) can enforce
+        # citation gating just like the repo-level enricher does.
+        cite_first = str(cites[0]).strip() if isinstance(cites, list) and cites else ""
+        evidence = f" _(evidence: `{cite_first}`)_" if cite_first else ""
+        kept.append(bullet + evidence)
         if len(kept) >= cap:
             break
     return kept, dropped

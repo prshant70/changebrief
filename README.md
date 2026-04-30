@@ -165,7 +165,8 @@ changebrief config check
 ```bash
 # AI context — give your coding agent the right context
 changebrief ai-context init    [--path /path/to/repo] [--targets claude|cursor|codex]
-                               [--enrich] [--dry-run]
+                               [--enrich] [--enrich-deps] [--dep-hosts github.com|bitbucket.org|file]
+                               [--dry-run]
 changebrief ai-context build   --path /path/to/custom-framework
                                [--name <pkg>] [--description "..."] [--note "..."]
                                [--enrich/--no-enrich] [--force] [--dry-run]
@@ -195,7 +196,10 @@ changebrief cache purge --all
 | --- | --- | --- |
 | `--path`, `-p` | `ai-context`, `validate` | Point at a repo outside your current directory. |
 | `--targets` | `ai-context init` | Which agent files to emit (`claude` / `cursor` / `codex`, repeatable). |
-| `--enrich` / `--no-enrich` | `ai-context build`, `ai-context init` | Toggle the LLM synthesis pass. |
+| `--enrich` | `ai-context init` | Optional LLM polish: adds a short *Inferred conventions / Gotchas* section (each bullet must cite a real file path or it’s dropped). |
+| `--enrich/--no-enrich` | `ai-context build` | Toggle the LLM synthesis pass for framework learning (defaults to `--enrich`). |
+| `--enrich-deps` | `ai-context init` | Discover **pinned** git dependencies (Python/Node v1), build framework context for each (cached), and merge it into this `init` run. |
+| `--dep-hosts` | `ai-context init --enrich-deps` | Allowlist for dependency hosts (repeatable). Defaults to `github.com`, `bitbucket.org`, and `file` (for `file://` deps/tests). |
 | `--base` / `--feature` | `validate` | Required. Any valid Git ref (branch, tag, SHA). |
 | `--nocache` | `validate` | Ignore the local cache and re-run the full pipeline. |
 | `--format` | `validate` | `pretty` (default, emoji), `json` (CI-friendly), or `markdown` (PR comments). |
@@ -222,6 +226,9 @@ changebrief ai-context init --targets cursor --dry-run
 
 # Optional LLM polish on top of the deterministic context (off by default)
 changebrief ai-context init --enrich
+
+# Optional: learn pinned git dependencies (Python/Node v1) and merge their framework context
+changebrief ai-context init --enrich-deps
 ```
 
 The generator scans real repo signals — language, declared dependencies,
@@ -279,6 +286,27 @@ framework root, model, prompt version, and a digest of the cited files —
 unchanged repos are free to re-run. The command refuses to overwrite an
 existing framework entry unless `--force` is passed, and unrelated keys
 (`do:` / `dont:` / `notes:` you've curated by hand) are preserved.
+
+### Learning pinned git dependencies (`init --enrich-deps`)
+
+When enabled, `ai-context init` can also learn about internal/framework repos that your
+service depends on (so your generated `CLAUDE.md` includes framework-aware guidance even
+if you didn’t run `ai-context build` manually).
+
+What it does:
+
+- **Discovers pinned git deps** (skips floating refs like `main`): Python (`pyproject.toml`, `requirements*.txt`, `Pipfile`) and Node (`package.json`) v1.
+- **Checks them out into a local cache** under `~/.changebrief/cache/ai-context-deps/`.
+- **Builds a framework entry** using the same deterministic extractor and optional LLM synthesizer as `ai-context build`.
+- **Merges a capped, evidence-gated subset** into this `init` run:
+  - per dependency: up to **3** `do`, **3** `dont`, **4** `notes`
+  - overall doc caps also apply (keeps `CLAUDE.md` concise)
+  - dep-derived bullets without explicit evidence are dropped
+
+Safety controls:
+
+- `--dep-hosts` restricts which hosts are allowed (repeatable).
+- Only **pinned** refs are processed.
 
 `--enrich` calls the configured LLM to add a polished overview and a few
 *Inferred conventions / Gotchas* bullets. It's strictly bounded:

@@ -28,6 +28,12 @@ _MAJOR_IMPORT_FILE_THRESHOLD = 3
 # How many additional major imports to surface per language.
 _MAX_MAJOR_IMPORTS = 6
 
+# Global caps for the final generated doc. These prevent `--enrich-deps` from
+# ballooning the consumer CLAUDE.md with framework dumps.
+_MAX_DO_BULLETS = 10
+_MAX_DONT_BULLETS = 8
+_MAX_NOTES_BULLETS = 12
+
 
 def compose_context(repo_ctx: RepoContext, config: ContextConfig) -> AIContext:
     """Compose the agent-ready context from raw signals + config."""
@@ -357,7 +363,7 @@ def _do_section(repo_ctx: RepoContext, config: ContextConfig) -> AIContextSectio
             + " when adding new modules."
         )
     bullets.extend(_normalise_lines(config.do))
-    s.bullets = bullets
+    s.bullets = bullets[:_MAX_DO_BULLETS]
     return s
 
 
@@ -372,14 +378,14 @@ def _dont_section(repo_ctx: RepoContext, config: ContextConfig) -> AIContextSect
         bullets.append("Don't introduce new top-level dependencies without justifying them in the PR description.")
     bullets.append("Don't bypass existing error-handling decorators (`@handle_errors`, custom middleware, etc.) — they exist to keep exit codes / responses consistent.")
     bullets.extend(_normalise_lines(config.dont))
-    s.bullets = bullets
+    s.bullets = bullets[:_MAX_DONT_BULLETS]
     return s
 
 
 def _notes_section(config: ContextConfig) -> AIContextSection:
     """Renders user-config ``notes`` only. Section is omitted when no notes exist."""
     s = AIContextSection(title="Notes")
-    s.bullets = _normalise_lines(config.notes)
+    s.bullets = _normalise_lines(config.notes)[:_MAX_NOTES_BULLETS]
     return s
 
 

@@ -186,7 +186,6 @@ def _baseline_notes(
 ) -> List[str]:
     """Hard, citation-bearing facts that work even when the LLM is unavailable."""
     out: List[str] = []
-    repo = Path(extraction.repo_root)
 
     if extraction.public_api:
         names = ", ".join(f"`{s.name}`" for s in extraction.public_api[:18])
@@ -213,7 +212,9 @@ def _baseline_notes(
 
     if extraction.examples:
         ex_path = extraction.examples[0].rel_path
-        out.append(f"**Smallest end-to-end example**: `{ex_path}` in {repo}.")
+        # Keep paths repo-relative so cached dependency builds never leak local
+        # filesystem paths into generated context.
+        out.append(f"**Smallest end-to-end example**: `{ex_path}`.")
 
     if extraction.notable_dirs:
         bits = ", ".join(f"`{nd.rel_path}` ({nd.description})" for nd in extraction.notable_dirs[:5])
@@ -232,8 +233,6 @@ def _fallback_description(extraction: FrameworkExtraction) -> str:
         text = f"{name} — {extraction.primary_language.title()} package."
     else:
         text = name
-    if extraction.repo_root:
-        text = text.rstrip(".") + f". Source: {extraction.repo_root}."
     return text
 
 
