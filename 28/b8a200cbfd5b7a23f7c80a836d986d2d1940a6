@@ -1,0 +1,29 @@
+changebrief/core/ai_context/composer.py
+  b5f48ebdc34479bb 128-129,161-173
+changebrief/core/ai_context/enricher.py
+  b5f48ebdc34479bb 47-54,75,79-83,85,125-163,165-172,289-332,338-339,414-437
+changebrief/core/ai_context/dependency_learner.py
+  b5f48ebdc34479bb 44,516,690,692-693
+changebrief/core/ai_context/build_synthesizer.py
+  b5f48ebdc34479bb 24,422,434-446
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "28b8a200cbfd5b7a23f7c80a836d986d2d1940a6",
+  "prompts": {
+    "b5f48ebdc34479bb": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "8907e889-e02e-49f6-ade1-5c84b9c9fccc",
+        "model": "default"
+      },
+      "human_author": "Prashant Mishra",
+      "messages": [],
+      "total_additions": 174,
+      "total_deletions": 7,
+      "accepted_lines": 174,
+      "overriden_lines": 0
+    }
+  }
+}
