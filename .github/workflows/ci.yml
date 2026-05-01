@@ -31,10 +31,9 @@ jobs:
 
       - name: Run tests (coverage >= 70%)
         run: |
-          # Coverage gate focuses on the ai-context pipeline (primary user-facing feature).
+          # Coverage is measured only for the changebrief package (not tests/tools at repo root).
           pytest -q \
-            --cov=changebrief.core.ai_context \
-            --cov=changebrief.commands.ai_context \
+            --cov=changebrief \
             --cov-report=term-missing \
             --cov-fail-under=70
 
