@@ -70,6 +70,18 @@ def test_enrich_drops_hallucinated_paths(monkeypatch: pytest.MonkeyPatch, small_
             {"description": "Don't add new top-level errors", "evidence_path": "demo/errors.py"},
             {"description": "Made-up rule", "evidence_path": "../etc/passwd"},  # path-traversal
         ],
+        "do": [
+            {"bullet": "Use the canonical entrypoint `demo/main.py`.", "evidence_path": "demo/main.py"},
+            {"bullet": "Fake rule", "evidence_path": "nope.py"},
+        ],
+        "dont": [
+            {"bullet": "Don't swallow `DemoError`.", "evidence_path": "demo/errors.py"},
+            {"bullet": "Fake rule", "evidence_path": "nope.py"},
+        ],
+        "notes": [
+            {"bullet": "The service is a FastAPI app defined in `demo/main.py`.", "evidence_path": "demo/main.py"},
+            {"bullet": "Fake note", "evidence_path": "nope.py"},
+        ],
     }
     monkeypatch.setattr(enricher_mod, "_call_llm", lambda *a, **kw: payload)
 
@@ -85,7 +97,7 @@ def test_enrich_drops_hallucinated_paths(monkeypatch: pytest.MonkeyPatch, small_
 
     # Polished overview applied.
     assert "FastAPI" in enriched.overview
-    # New sections added.
+    # New sections added (cited).
     titles = [s.title for s in enriched.sections]
     assert "Suggestions (LLM; verify in cited file)" in titles
     assert "Gotchas (LLM; verify in cited file)" in titles
@@ -146,6 +158,9 @@ def test_cache_hit_avoids_second_llm_call(monkeypatch: pytest.MonkeyPatch, tmp_p
             "polished_overview": "demo (cached test)",
             "inferred_conventions": [{"observation": "x", "evidence_path": "demo/main.py"}],
             "gotchas": [],
+            "do": [],
+            "dont": [],
+            "notes": [],
         }
 
     monkeypatch.setattr(enricher_mod, "_call_llm", fake_call)

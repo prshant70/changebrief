@@ -20,6 +20,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
+    "pytest-cov>=5.0",
 ]
 
 [project.scripts]
@@ -35,3 +36,20 @@ include = ["changebrief*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.coverage.run]
+branch = true
+omit = [
+    # Network/LLM integration is exercised indirectly and is not suitable for hermetic CI.
+    "changebrief/core/llm/*",
+    # Service wrappers and external-process adapters are integration-tested in downstream repos.
+    "changebrief/core/services/*",
+    # LLM-backed framework synthesis is guarded/disabled under CI; test via contract/unit tests separately.
+    "changebrief/core/ai_context/build_synthesizer.py",
+    # Language adapters include stubs for future expansion; treat as integration coverage.
+    "changebrief/core/ai_context/languages/*",
+]
+
+[tool.coverage.report]
+skip_covered = true
+show_missing = true

@@ -431,7 +431,7 @@ def _verified_bullets(
     return kept, dropped
 
 
-_ABS_PATH_RE = re.compile(r"(?<![`\\w])/(?:Users|home|opt|var|private|Volumes)/[^\\s)`\\]]{2,200}")
+_ABS_PATH_RE = re.compile(r"(?<![`\w])/(?:Users|home|opt|var|private|Volumes)/[^\s)`\]]{2,200}")
 
 
 def _strip_absolute_paths(text: str) -> str:
